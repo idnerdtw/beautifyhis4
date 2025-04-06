@@ -20,7 +20,7 @@
 
 1. 在 HIS 4.0 系統中，開啟病人之 **「彙總列印」** 報告。
 2. 使用 Ctrl+A 全選並 Ctrl+C 複製至剪貼簿。
-3. 開啟 `BeautifyHIS4.0.html` 檔案（可直接使用瀏覽器打開）。
+3. 開啟 `index.html` 檔案（可直接使用瀏覽器打開）。
 4. 點選 `貼上+整理` 按鈕，自動匯入並解析內容。
 5. 可切換上方分頁查看各類結果：**文字**、**趨勢**、**微生物**、**藥敏**、**表格**（開發中）。
 
@@ -32,7 +32,7 @@
 
 ### 📁 檔案說明
 
-- `BeautifyHIS4.0.html`：可單機使用的 HTML 工具，支援離線操作
+- `index.html`：可單機使用的 HTML 工具，支援離線操作
 
 ### 🔄 更新狀態
 
@@ -71,7 +71,7 @@ MIT 授權
 
 1. In HIS 4.0, open the patient's **"Summary Print"** report.
 2. Use Ctrl+A to select all content and Ctrl+C to copy it.
-3. Open `BeautifyHIS4.0.html` in a modern browser.
+3. Open `index.html` in a modern browser.
 4. Click `Paste + Parse` to auto-process the content.
 5. Use tabs to browse output: **Text**, **Trend**, **Micro**, **Sensitivity**, and **Summary** (in development).
 
@@ -83,7 +83,7 @@ MIT 授權
 
 ### 📁 File Info
 
-- `BeautifyHIS4.0.html`: A standalone file, fully functional offline
+- `index.html`: A standalone file, fully functional offline
 
 ### 🔄 Development Status
 
