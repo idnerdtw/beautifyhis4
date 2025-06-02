@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HIS 4.0 彙總報告整理 V0405D</title>
+    <title>HIS 4.0 彙總報告整理 V0414C</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/2.1.0/chartjs-plugin-annotation.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
@@ -18,7 +19,7 @@
             font-family: Arial, sans-serif;
             margin: 0;
             background-color: #f4f4f4;
-            overflow-x: hidden;
+            /* 移除 overflow-x: hidden */
         }
 
         /* 主要佈局容器 */
@@ -234,6 +235,26 @@
 
         .tab-content.active {
             display: block;
+        }
+
+        .summary-table th:first-child,
+        .summary-table td:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 2;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            background-color: #ffffff; /* 確保左側欄背景色不透明 */
+        }
+
+        .summary-table th:first-child {
+            z-index: 3;
+            background-color: #f1f1f1; /* 表頭背景色 */
+        }
+
+        #summaryTableContainer .table-scroller {
+            max-width: 100%;
+            overflow-x: auto;
+            padding-bottom: 15px; /* 為水平滾動條預留空間 */
         }
 
         /* 原始樣式保留 */
@@ -611,7 +632,7 @@
         <!-- 左側邊欄 -->
         <div class="sidebar">
             <div class="sidebar-header">
-                HIS 4.0 彙總報告整理 0405D
+                HIS 4.0 彙總報告整理 0414C
             </div>
 
             <!-- 標籤頁按鈕 -->
@@ -1858,13 +1879,21 @@ function parseReport() {
     // Initialize the summary tab
     initSummaryTab();
     
-    // 自動切換到藥敏標籤頁
+    // 自動生成摘要表格
+    generateSummaryTable();
+    
+    // 決定要切換到哪個標籤頁
     if (allAntibioticResults.length > 0) {
+        // 如果有藥敏結果，切換到藥敏標籤頁
         openTab({ currentTarget: document.querySelector('.tab-button[onclick*="sensitivityTab"]') }, 'sensitivityTab');
-    }
+    } 
     // 如果沒有藥敏結果但有微生物結果，則切換到微生物標籤頁
-    else if (extractMicrobiologyData(text).length > 0) {
+    else if (extractMicrobiologyData(document.getElementById("inputReport").value).length > 0) {
         openTab({ currentTarget: document.querySelector('.tab-button[onclick*="microTab"]') }, 'microTab');
+    }
+    // 如果有檢驗數據但沒有微生物和藥敏結果，切換到表格頁
+    else if (labData.length > 0) {
+        openTab({ currentTarget: document.querySelector('.tab-button[onclick*="summaryTab"]') }, 'summaryTab');
     }
 }
 
@@ -1917,14 +1946,23 @@ async function parseAndCopy() {
         
         alert("解析結果已複製到剪貼簿！");
         
-        // 自動切換到藥敏標籤頁
+        // 自動生成摘要表格
+        generateSummaryTable();
+        
+        // 決定要切換到哪個標籤頁
         if (allAntibioticResults.length > 0) {
+            // 如果有藥敏結果，切換到藥敏標籤頁
             openTab({ currentTarget: document.querySelector('.tab-button[onclick*="sensitivityTab"]') }, 'sensitivityTab');
-        }
+        } 
         // 如果沒有藥敏結果但有微生物結果，則切換到微生物標籤頁
-        else if (extractMicrobiologyData(text).length > 0) {
+        else if (extractMicrobiologyData(document.getElementById("inputReport").value).length > 0) {
             openTab({ currentTarget: document.querySelector('.tab-button[onclick*="microTab"]') }, 'microTab');
         }
+        // 如果有檢驗數據但沒有微生物和藥敏結果，切換到表格頁
+        else if (labData.length > 0) {
+            openTab({ currentTarget: document.querySelector('.tab-button[onclick*="summaryTab"]') }, 'summaryTab');
+        }
+
     } catch (err) {
         alert("複製失敗，請手動複製結果。");
         console.error('複製失敗:', err);
@@ -3664,8 +3702,18 @@ function enhanceOrganismSelector() {
         document.querySelectorAll('.organism-button').forEach(button => {
             button.classList.add('active');
         });
+        
+        // 修改：全選後自動顯示比較表格
+        displayMultiOrganismComparison();
+        
+        // 突出顯示比較按鈕（視覺提示）
+        const compareButton = document.querySelector('.compare-button');
+        if (compareButton) {
+            compareButton.style.backgroundColor = '#1a73e8';
+            compareButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+        }
     };
-    
+        
     const deselectAllButton = document.createElement('button');
     deselectAllButton.textContent = '取消全選';
     deselectAllButton.className = 'deselect-all-button';
@@ -3735,30 +3783,23 @@ function enhanceOrganismSelector() {
                 this.classList.add('active');
             }
             
-            // 如果只有一個選中的微生物，顯示其詳細結果
+            // 檢查選中的微生物數量
             const activeButtons = document.querySelectorAll('.organism-button.active');
+            
+            // 改進：直接根據選中數量決定顯示方式
             if (activeButtons.length === 1) {
+                // 只有一個微生物時，顯示詳細表格
                 displayAntibioticResultsAsTable(organism, specimen, number, datetime, sampleID);
             } else if (activeButtons.length > 1) {
-                // 自動顯示比較按鈕
-                compareButton.style.backgroundColor = '#1a73e8';  // 突出顯示比較按鈕
-                compareButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+                // 多個微生物時，直接顯示比較表格，無需額外點擊
+                displayMultiOrganismComparison();
                 
-                // 如果選擇多個項目，顯示提示
-                const resultsContainer = document.getElementById('antibioticResults');
-                resultsContainer.innerHTML = `
-                    <div style="text-align: center; padding: 20px; background-color: #f8f9fa; border-radius: 8px; margin-top: 20px;">
-                        <p>已選擇 ${activeButtons.length} 個項目</p>
-                        <button id="compareNowBtn" style="padding: 8px 16px; background-color: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
-                            點擊這裡進行比較
-                        </button>
-                    </div>
-                `;
-                
-                // 為新按鈕添加點擊事件
-                document.getElementById('compareNowBtn').addEventListener('click', function() {
-                    displayMultiOrganismComparison();
-                });
+                // 突出顯示比較按鈕（僅視覺提示）
+                const compareButton = document.querySelector('.compare-button');
+                if (compareButton) {
+                    compareButton.style.backgroundColor = '#1a73e8';
+                    compareButton.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+                }
             }
         });
     });
@@ -4068,7 +4109,7 @@ function getBaseDrugName(drug) {
 // 在頁面加載時初始化
 initSensitivityTab();
 
-// Initialize the summary tab
+// 初始化摘要標籤頁的代碼修改
 function initSummaryTab() {
     const summaryControls = document.getElementById('summaryControls');
     const summaryTableContainer = document.getElementById('summaryTableContainer');
@@ -4103,6 +4144,16 @@ function initSummaryTab() {
     itemSelect.size = 5;
     itemSelect.style.minWidth = '200px';
     itemSelect.style.marginRight = '15px';
+    
+    // 添加變更事件監聽 - 當選擇變更時自動更新表格
+    itemSelect.addEventListener('change', function() {
+        // 檢查是否有選中的項目
+        const selectedOptions = Array.from(this.selectedOptions);
+        if (selectedOptions.length > 0) {
+            // 有選中項目時自動生成表格
+            generateSummaryTable();
+        }
+    });
     
     // Get all unique test items from labData
     const allTests = [...new Set(labData.map(item => item.test))];
@@ -4153,6 +4204,8 @@ function initSummaryTab() {
     selectAllBtn.style.cursor = 'pointer';
     selectAllBtn.onclick = function() {
         Array.from(itemSelect.options).forEach(opt => opt.selected = true);
+        // 全選後自動更新表格
+        generateSummaryTable();
     };
     
     const deselectAllBtn = document.createElement('button');
@@ -4167,6 +4220,7 @@ function initSummaryTab() {
     deselectAllBtn.style.cursor = 'pointer';
     deselectAllBtn.onclick = function() {
         Array.from(itemSelect.options).forEach(opt => opt.selected = false);
+        // 取消全選不自動更新表格，保持原有行為
     };
     
     const monitoredOnlyBtn = document.createElement('button');
@@ -4183,13 +4237,15 @@ function initSummaryTab() {
         Array.from(itemSelect.options).forEach(opt => {
             opt.selected = monitoredLabs.includes(opt.value);
         });
+        // 選擇監控項目後自動更新表格
+        generateSummaryTable();
     };
     
     buttonContainer.appendChild(selectAllBtn);
     buttonContainer.appendChild(deselectAllBtn);
     buttonContainer.appendChild(monitoredOnlyBtn);
     
-    // Create refresh button
+    // Create refresh button (可以保留，但作為手動刷新的備用)
     const refreshBtn = document.createElement('button');
     refreshBtn.id = 'refreshSummary';
     refreshBtn.textContent = '更新表格';
@@ -4217,15 +4273,20 @@ function initSummaryTab() {
     summaryControls.appendChild(controlPanel);
     
     // Add initial empty table message
-    summaryTableContainer.innerHTML = '<p style="text-align: center; padding: 20px;">請在上方選擇檢驗項目並點擊「更新表格」按鈕</p>';
+    summaryTableContainer.innerHTML = '<p style="text-align: center; padding: 20px;">請在上方選擇檢驗項目</p>';
+    
+    // 初始時自動生成表格（如果有預選的監控項目）
+    if (Array.from(itemSelect.selectedOptions).length > 0) {
+        generateSummaryTable();
+    }
 }
 
-// Generate the summary table based on selected items
+// 修改 generateSummaryTable 函數來添加迷你趨勢圖功能
 function generateSummaryTable() {
     const summaryTableContainer = document.getElementById('summaryTableContainer');
     const itemSelect = document.getElementById('itemSelect');
     
-    // Get selected tests
+    // 獲取選中的檢驗項目
     const selectedTests = Array.from(itemSelect.selectedOptions).map(opt => opt.value);
     
     if (selectedTests.length === 0) {
@@ -4233,7 +4294,7 @@ function generateSummaryTable() {
         return;
     }
     
-    // Filter labData for selected tests
+    // 篩選選中的檢驗項目資料
     const filteredData = labData.filter(item => selectedTests.includes(item.test));
     
     if (filteredData.length === 0) {
@@ -4241,110 +4302,175 @@ function generateSummaryTable() {
         return;
     }
     
-    // Group data by date
-    const groupedByDate = {};
+    // 按檢驗項目分組
+    const groupedByTest = {};
     filteredData.forEach(item => {
-        // Create a key using date and time (if available)
-        const timeStr = item.time ? ` ${item.time}` : '';
-        const dateTimeKey = `${item.date}${timeStr}`;
-        
-        if (!groupedByDate[dateTimeKey]) {
-            groupedByDate[dateTimeKey] = {
-                date: item.date,
-                time: item.time || '',
-                shortDate: item.shortDate,
-                tests: {}
+        if (!groupedByTest[item.test]) {
+            groupedByTest[item.test] = {
+                test: item.test,
+                dates: {}
             };
         }
         
-        // Store test value using the test name as key
-        groupedByDate[dateTimeKey].tests[item.test] = {
+        // 創建以日期時間為鍵的資料
+        const timeStr = item.time ? ` ${item.time}` : '';
+        const dateTimeKey = `${item.date}${timeStr}`;
+        
+        groupedByTest[item.test].dates[dateTimeKey] = {
             value: item.value,
-            rawValue: item.rawValue
+            rawValue: item.rawValue,
+            date: item.date,
+            time: item.time || ''
         };
     });
     
-    // Convert to array and sort by date and time (newest first)
-    const sortedDates = Object.values(groupedByDate).sort((a, b) => {
-        // Convert to comparable datetime strings
-        const dateTimeA = `${a.date} ${a.time || '00:00'}`;
-        const dateTimeB = `${b.date} ${b.time || '00:00'}`;
-        
-        // Descending order (newest first)
-        return new Date(dateTimeB) - new Date(dateTimeA);
+    // 獲取所有不重複的日期時間
+    const allDateTimes = new Set();
+    filteredData.forEach(item => {
+        const timeStr = item.time ? ` ${item.time}` : '';
+        allDateTimes.add(`${item.date}${timeStr}`);
     });
     
-    // Create table
+    // 轉換為陣列並按日期時間排序（最新的在前）
+    const sortedDateTimes = Array.from(allDateTimes).sort((a, b) => {
+        const dateA = new Date(a.split(' ')[0] + (a.includes(' ') ? 'T' + a.split(' ')[1] : ''));
+        const dateB = new Date(b.split(' ')[0] + (b.includes(' ') ? 'T' + b.split(' ')[1] : ''));
+        return dateB - dateA; // 降序排列
+    });
+    
+    // 創建表格
     const table = document.createElement('table');
     table.className = 'summary-table';
     table.style.width = '100%';
     table.style.borderCollapse = 'collapse';
     table.style.marginBottom = '20px';
     
-    // Create header
+    // 創建表頭
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
     
-    // Date and time header
-    const dateHeader = document.createElement('th');
-    dateHeader.textContent = '日期時間';
-    dateHeader.style.padding = '10px';
-    dateHeader.style.backgroundColor = '#f1f1f1';
-    dateHeader.style.border = '1px solid #ddd';
-    dateHeader.style.position = 'sticky';
-    dateHeader.style.left = '0';
-    dateHeader.style.zIndex = '1';
-    headerRow.appendChild(dateHeader);
+    // 檢驗項目列頭（第一列）
+    const testHeader = document.createElement('th');
+    testHeader.textContent = '檢驗項目';
+    testHeader.style.padding = '10px';
+    testHeader.style.backgroundColor = '#f1f1f1';
+    testHeader.style.border = '1px solid #ddd';
+    testHeader.style.position = 'sticky';
+    testHeader.style.left = '0';
+    testHeader.style.zIndex = '1';
+    headerRow.appendChild(testHeader);
+
+    // 迷你趨勢圖列頭（第二列）
+    const sparklineHeader = document.createElement('th');
+    sparklineHeader.textContent = '趨勢';
+    sparklineHeader.style.padding = '10px';
+    sparklineHeader.style.backgroundColor = '#f1f1f1';
+    sparklineHeader.style.border = '1px solid #ddd';
+    sparklineHeader.style.position = 'sticky';
+    sparklineHeader.style.left = testHeader.offsetWidth + 'px';
+    sparklineHeader.style.zIndex = '1';
+    sparklineHeader.style.width = '120px'; // 設置固定寬度
+    headerRow.appendChild(sparklineHeader);
     
-    // Test columns
-    selectedTests.forEach(test => {
+    // 時間日期列頭
+    sortedDateTimes.forEach(dateTime => {
         const th = document.createElement('th');
-        th.textContent = `${test} (${getUnitForTest(test)})`;
+        th.textContent = dateTime;
         th.style.padding = '10px';
         th.style.backgroundColor = '#f1f1f1';
         th.style.border = '1px solid #ddd';
-        th.setAttribute('data-test', test);
         headerRow.appendChild(th);
     });
     
     thead.appendChild(headerRow);
     table.appendChild(thead);
     
-    // Create body
+    // 創建表格內容
     const tbody = document.createElement('tbody');
     
-    // For each date, create a row
-    sortedDates.forEach(dateData => {
+    // 對每個檢驗項目創建一行
+    selectedTests.forEach(test => {
         const row = document.createElement('tr');
         
-        // Date cell
-        const dateCell = document.createElement('td');
-        dateCell.style.padding = '8px';
-        dateCell.style.border = '1px solid #ddd';
-        dateCell.style.backgroundColor = '#fff';
-        dateCell.style.position = 'sticky';
-        dateCell.style.left = '0';
-        dateCell.style.fontWeight = 'bold';
+        // 檢驗項目單元格
+        const testCell = document.createElement('td');
+        testCell.textContent = `${test} (${getUnitForTest(test)})`;
+        testCell.style.padding = '8px';
+        testCell.style.border = '1px solid #ddd';
+        testCell.style.backgroundColor = '#fff';
+        testCell.style.position = 'sticky';
+        testCell.style.left = '0';
+        testCell.style.fontWeight = 'bold';
+        testCell.style.whiteSpace = 'nowrap'; // 防止長名稱換行
+        row.appendChild(testCell);
         
-        // Format the date display
-        const timeStr = dateData.time ? ` ${dateData.time}` : '';
-        dateCell.textContent = `${dateData.date}${timeStr}`;
+        // 迷你趨勢圖單元格
+        const sparklineCell = document.createElement('td');
+        sparklineCell.style.padding = '5px';
+        sparklineCell.style.border = '1px solid #ddd';
+        sparklineCell.style.backgroundColor = '#fff';
+        sparklineCell.style.position = 'relative';
+        row.appendChild(sparklineCell);
         
-        row.appendChild(dateCell);
+        // 創建迷你趨勢圖的容器
+        const sparklineContainer = document.createElement('div');
+        sparklineContainer.style.width = '100px';
+        sparklineContainer.style.height = '25px';
+        sparklineContainer.style.margin = '0 auto';
+        sparklineCell.appendChild(sparklineContainer);
+
+        // 收集數據用於繪製趨勢圖
+        const sparklineData = [];
+        let hasNoNumericValue = false;
+
+        // 對每個日期添加數值到趨勢圖數據中 - 注意這裡使用的是已經按時間降序排序的數組
+        // 所以數據是從最新到最舊的順序，需要記住這點以便正確繪製趨勢圖
+        sortedDateTimes.forEach(dateTime => {
+            if (groupedByTest[test] && groupedByTest[test].dates[dateTime]) {
+                const numericValue = parseFloat(groupedByTest[test].dates[dateTime].value);
+                if (!isNaN(numericValue)) {
+                    sparklineData.push(numericValue);
+                } else {
+                    hasNoNumericValue = true;
+                }
+            }
+        });
+
+        // 只有在有有效數值數據且數據點超過1個時才繪製趨勢圖
+        if (!hasNoNumericValue && sparklineData.length > 1) {
+            // 創建Canvas元素
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 25;
+            sparklineContainer.appendChild(canvas);
+
+            // 繪製迷你趨勢圖
+            drawSparkline(canvas, sparklineData, test);
+        } else {
+            // 如果數據點不足，顯示提示信息
+            const noDataMsg = document.createElement('div');
+            noDataMsg.style.fontSize = '10px';
+            noDataMsg.style.color = '#999';
+            noDataMsg.style.textAlign = 'center';
+            noDataMsg.style.paddingTop = '5px';
+            noDataMsg.textContent = hasNoNumericValue ? '包含非數值' : '數據點不足';
+            sparklineContainer.appendChild(noDataMsg);
+        }
         
-        // For each test, add a cell
-        selectedTests.forEach(test => {
+        // 對每個日期添加單元格
+        sortedDateTimes.forEach(dateTime => {
             const cell = document.createElement('td');
             cell.style.padding = '8px';
             cell.style.border = '1px solid #ddd';
             cell.style.textAlign = 'center';
             
-            if (dateData.tests[test]) {
-                // Use raw value for display
-                cell.textContent = dateData.tests[test].rawValue;
+            // 檢查此檢驗項目在該日期是否有數據
+            if (groupedByTest[test] && groupedByTest[test].dates[dateTime]) {
+                // 使用原始值顯示
+                const value = groupedByTest[test].dates[dateTime].rawValue;
+                cell.textContent = value;
                 
-                // Add color highlighting for abnormal values
-                const value = dateData.tests[test].rawValue;
+                // 根據異常值添加顏色標記
                 if (value.includes('H') || value.includes('>')) {
                     cell.style.color = '#d32f2f';
                     cell.style.fontWeight = 'bold';
@@ -4365,22 +4491,22 @@ function generateSummaryTable() {
     
     table.appendChild(tbody);
     
-    // Clear and add the table
+    // 清空並添加表格
     summaryTableContainer.innerHTML = '';
     
-    // Add table info
+    // 添加表格資訊
     const tableInfo = document.createElement('div');
     tableInfo.style.marginBottom = '10px';
     tableInfo.style.fontSize = '14px';
     tableInfo.style.color = '#555';
     tableInfo.innerHTML = `
-        <span>共有 ${sortedDates.length} 個檢測日期時間點，${selectedTests.length} 個檢驗項目</span>
-        <span style="float: right; color: #777;">表格可左右滾動查看更多項目 →</span>
+        <span>共有 ${sortedDateTimes.length} 個檢測日期時間點，${selectedTests.length} 個檢驗項目</span>
+        <span style="float: right; color: #777;">表格可左右滾動查看更多時間點 →</span>
     `;
     
     summaryTableContainer.appendChild(tableInfo);
     
-    // Create a scrollable container for the table
+    // 創建表格的可滾動容器
     const tableScroller = document.createElement('div');
     tableScroller.style.width = '100%';
     tableScroller.style.overflowX = 'auto';
@@ -4389,6 +4515,117 @@ function generateSummaryTable() {
     summaryTableContainer.appendChild(tableScroller);
 }
 
+// 繪製迷你趨勢圖的函數
+function drawSparkline(canvas, data, testName) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // 清除畫布
+    ctx.clearRect(0, 0, width, height);
+    
+    // 獲取數據的最小值和最大值
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    
+    // 如果最小值等於最大值，設置一個小偏移以便可視化
+    const yRange = max === min ? max * 0.1 : max - min;
+    
+    // 計算比例因子
+    const xScale = width / (data.length - 1);
+    const yScale = height / yRange;
+    
+    // 獲取此測試項目的顏色
+    const color = getChartColor(testName);
+    
+    // 繪製線條
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    
+    // 繪製每個數據點 - 將x座標顛倒，使最新的數據（索引0）在右側，最早的數據在左側
+    data.forEach((value, i) => {
+        // 反轉x座標的計算方式，使最新的數據在右側
+        const x = width - (i * xScale);
+        
+        // 將y坐標顛倒並縮放適當空間，留下上下邊距
+        const normalizedValue = (value - min) / yRange; // 歸一化到0-1
+        const y = height - (normalizedValue * (height * 0.8) + height * 0.1); // 給上下留10%的空間
+        
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    });
+    
+    // 繪製線條
+    ctx.stroke();
+    
+    // 繪製填充區域 - 注意x座標的計算方式已更改
+    ctx.lineTo(0, height); // 最左側（最舊的數據）
+    ctx.lineTo(width, height); // 最右側（最新的數據）
+    ctx.closePath();
+    
+    // 填充顏色（半透明）
+    const fillColor = color.replace('rgba', 'rgba').replace(/\d+(\.\d+)?\)/, '0.2)');
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+    
+    // 添加端點 - 最舊和最新的數據點
+    
+    // 繪製起點（最舊的數據，現在在左側）
+    const lastIndex = data.length - 1;
+    ctx.beginPath();
+    ctx.fillStyle = color;
+    ctx.arc(
+        0, // 最左側
+        height - (((data[lastIndex] - min) / yRange) * (height * 0.8) + height * 0.1), 
+        2, 0, Math.PI * 2
+    );
+    ctx.fill();
+    
+    // 繪製終點（最新的數據，現在在右側）
+    ctx.beginPath();
+    ctx.fillStyle = color;
+    ctx.arc(
+        width, // 最右側 
+        height - (((data[0] - min) / yRange) * (height * 0.8) + height * 0.1), 
+        3, 0, Math.PI * 2
+    );
+    ctx.fill();
+    
+    // 添加趨勢指示器（如果數據點足夠多）
+    if (data.length >= 3) {
+        // 取第一個值（最新）和第二個值比較 - 注意資料數組是從新到舊排序的
+        const newestValue = data[0];
+        const secondNewestValue = data[1];
+        
+        // 繪製箭頭指示器
+        ctx.beginPath();
+        // 上升為綠色，下降為紅色
+        ctx.fillStyle = newestValue > secondNewestValue ? '#4caf50' : '#f44336';
+        
+        // 繪製一個小三角形 - 在右側（最新數據的位置）
+        const arrowX = width - 5; // 向左偏移一點
+        const arrowY = height - (((newestValue - min) / yRange) * (height * 0.8) + height * 0.1);
+        
+        if (newestValue > secondNewestValue) {
+            // 上升箭頭
+            ctx.moveTo(arrowX, arrowY - 5);
+            ctx.lineTo(arrowX + 4, arrowY);
+            ctx.lineTo(arrowX - 4, arrowY);
+        } else if (newestValue < secondNewestValue) {
+            // 下降箭頭
+            ctx.moveTo(arrowX, arrowY + 5);
+            ctx.lineTo(arrowX + 4, arrowY);
+            ctx.lineTo(arrowX - 4, arrowY);
+        }
+        
+        ctx.closePath();
+        ctx.fill();
+    }
+}
 // Helper function to get unit for a test
 function getUnitForTest(test) {
     const unitMap = {
@@ -7562,6 +7799,501 @@ function handleResponsiveLayout() {
             button.style.fontSize = '';
         });
     }
+}
+
+// 創建導出CSV按鈕函數
+function addExportCsvButton() {
+    // 檢查是否已經添加過按鈕
+    if (document.getElementById('exportCsvBtn')) {
+        return;
+    }
+
+    // 獲取表格控制區域
+    const summaryControls = document.getElementById('summaryControls');
+    if (!summaryControls) return;
+
+    // 尋找控制面板
+    const controlPanel = summaryControls.querySelector('.summary-control-panel');
+    if (!controlPanel) return;
+
+    // 創建按鈕
+    const exportBtn = document.createElement('button');
+    exportBtn.id = 'exportCsvBtn';
+    exportBtn.textContent = '匯出CSV';
+    exportBtn.style.display = 'block';
+    exportBtn.style.margin = '10px 0';
+    exportBtn.style.padding = '8px 16px';
+    exportBtn.style.backgroundColor = '#FF9800'; // 橙色
+    exportBtn.style.color = 'white';
+    exportBtn.style.border = 'none';
+    exportBtn.style.borderRadius = '4px';
+    exportBtn.style.cursor = 'pointer';
+    exportBtn.style.fontWeight = 'bold';
+    exportBtn.style.transition = 'background-color 0.3s';
+    
+    // 懸停效果
+    exportBtn.onmouseover = function() {
+        this.style.backgroundColor = '#F57C00';
+    };
+    exportBtn.onmouseout = function() {
+        this.style.backgroundColor = '#FF9800';
+    };
+
+    // 按鈕點擊事件
+    exportBtn.onclick = function() {
+        exportTableToCsv();
+    };
+
+    // 添加按鈕到控制面板
+    controlPanel.appendChild(exportBtn);
+}
+
+// 將表格數據導出為CSV並下載
+function exportTableToCsv() {
+    // 獲取表格元素
+    const table = document.querySelector('#summaryTableContainer .summary-table');
+    if (!table) {
+        alert('找不到表格數據！');
+        return;
+    }
+
+    // 獲取表頭行
+    const headerRow = table.querySelector('thead tr');
+    if (!headerRow) {
+        alert('找不到表格表頭！');
+        return;
+    }
+
+    // 提取表頭數據 (排除第二列的Sparkline列)
+    const headers = [];
+    const headerCells = headerRow.querySelectorAll('th');
+    
+    headerCells.forEach((cell, index) => {
+        // 跳過Sparkline列(第二列)
+        if (index !== 1) {
+            headers.push('"' + cell.textContent.trim().replace(/"/g, '""') + '"');
+        }
+    });
+
+    // 提取表格內容
+    const rows = [];
+    const tableRows = table.querySelectorAll('tbody tr');
+    
+    tableRows.forEach(row => {
+        const rowData = [];
+        const cells = row.querySelectorAll('td');
+        
+        cells.forEach((cell, index) => {
+            // 跳過Sparkline列(第二列)
+            if (index !== 1) {
+                rowData.push('"' + cell.textContent.trim().replace(/"/g, '""') + '"');
+            }
+        });
+        
+        if (rowData.length > 0) {
+            rows.push(rowData.join(','));
+        }
+    });
+
+    // 組合CSV內容
+    const csvContent = headers.join(',') + '\n' + rows.join('\n');
+    
+    // 創建Blob並下載
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    // 創建下載鏈接
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    
+    // 生成文件名：HIS_Summary_YYYY-MM-DD.csv
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const fileName = `HIS_Summary_${yyyy}-${mm}-${dd}.csv`;
+    
+    link.setAttribute('download', fileName);
+    link.style.display = 'none';
+    
+    // 添加到頁面並觸發下載
+    document.body.appendChild(link);
+    link.click();
+    
+    // 清理
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    // 顯示成功通知
+    showExportNotification(`已匯出檔案：${fileName}`);
+}
+
+// 顯示匯出成功通知
+function showExportNotification(message) {
+    // 移除現有通知（如果有）
+    const existingNotification = document.getElementById('exportNotification');
+    if (existingNotification) {
+        existingNotification.remove();
+    }
+    
+    // 創建新通知
+    const notification = document.createElement('div');
+    notification.id = 'exportNotification';
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.left = '50%';
+    notification.style.transform = 'translateX(-50%)';
+    notification.style.padding = '12px 20px';
+    notification.style.backgroundColor = '#4CAF50';
+    notification.style.color = 'white';
+    notification.style.borderRadius = '5px';
+    notification.style.fontWeight = 'bold';
+    notification.style.zIndex = '9999';
+    notification.style.boxShadow = '0 2px 10px rgba(0,0,0,0.3)';
+    notification.style.display = 'flex';
+    notification.style.alignItems = 'center';
+    
+    // 添加圖標
+    const icon = document.createElement('i');
+    icon.className = 'fas fa-check-circle';
+    icon.style.marginRight = '10px';
+    icon.style.fontSize = '16px';
+    notification.appendChild(icon);
+    
+    // 添加文本
+    const text = document.createElement('span');
+    text.textContent = message;
+    notification.appendChild(text);
+    
+    // 添加到頁面
+    document.body.appendChild(notification);
+    
+    // 2秒後淡出
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transition = 'opacity 0.5s';
+        // 動畫結束後移除元素
+        setTimeout(() => notification.remove(), 500);
+    }, 3000);
+}
+
+// 初始化函數 - 在各種情境下添加匯出按鈕
+function initCsvExportFeature() {
+    // 檢查初始表格並添加按鈕
+    addExportCsvButton();
+    
+    // 監聽DOM變化，以便在表格動態載入後添加按鈕
+    const observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                // 檢查是否有新的控制面板添加
+                if (document.getElementById('summaryControls') && 
+                    !document.getElementById('exportCsvBtn')) {
+                    addExportCsvButton();
+                }
+            }
+        });
+    });
+    
+    // 配置觀察者
+    observer.observe(document.body, { childList: true, subtree: true });
+    
+    // 覆寫原始的表格生成函數，確保按鈕始終存在
+    if (typeof window.generateSummaryTable === 'function') {
+        const originalGenerateSummaryTable = window.generateSummaryTable;
+        window.generateSummaryTable = function() {
+            originalGenerateSummaryTable.apply(this, arguments);
+            // 確保在表格生成後添加匯出按鈕
+            setTimeout(addExportCsvButton, 100);
+        };
+    }
+    
+    // 覆寫Tab切換函數，確保在切換到表格標籤頁時添加按鈕
+    if (typeof window.openTab === 'function') {
+        const originalOpenTab = window.openTab;
+        window.openTab = function(evt, tabName) {
+            originalOpenTab.apply(this, arguments, evt, tabName);
+            if (tabName === 'summaryTab') {
+                setTimeout(addExportCsvButton, 100);
+            }
+        };
+    }
+    
+    console.log("CSV匯出功能已初始化");
+}
+
+// 在頁面載入完成後執行初始化
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCsvExportFeature);
+} else {
+    initCsvExportFeature();
+}
+
+// 添加匯出純文字報告按鈕
+function addExportTextButton() {
+    // 檢查按鈕是否已經存在
+    if (document.getElementById('exportTextBtn')) {
+        return;
+    }
+    
+    // 尋找合適的按鈕容器
+    const buttonContainer = document.querySelector('.action-buttons');
+    if (!buttonContainer) {
+        console.warn('找不到按鈕容器');
+        return;
+    }
+    
+    // 創建新按鈕
+    const exportBtn = document.createElement('button');
+    exportBtn.id = 'exportTextBtn';
+    exportBtn.innerHTML = '<i class="fas fa-clipboard-list"></i> 複製微生物摘要';
+    exportBtn.title = '複製精簡格式的微生物報告';
+    
+    // 添加樣式使其與"貼上+整理"按鈕一致
+    exportBtn.style.padding = '10px';
+    exportBtn.style.cursor = 'pointer';
+    exportBtn.style.backgroundColor = '#16a085'; // 與"貼上+整理"按鈕一樣的顏色
+    exportBtn.style.color = 'white';
+    exportBtn.style.border = 'none';
+    exportBtn.style.borderRadius = '4px';
+    exportBtn.style.transition = 'all 0.2s';
+    
+    // 添加懸停效果
+    exportBtn.onmouseover = function() {
+        this.style.backgroundColor = '#138a72'; // 懸停時的顏色
+    };
+    exportBtn.onmouseout = function() {
+        this.style.backgroundColor = '#16a085';
+    };
+    
+    // 設置點擊事件處理函數
+    exportBtn.onclick = function() {
+        exportMicrobiologySummary();
+    };
+    
+    // 找到重置按鈕
+    const resetBtn = Array.from(buttonContainer.querySelectorAll('button')).find(btn => 
+        btn.textContent.includes('重置全部') || 
+        btn.innerHTML.includes('fa-trash-alt')
+    );
+    
+    // 在重置按鈕前插入新按鈕
+    if (resetBtn) {
+        buttonContainer.insertBefore(exportBtn, resetBtn);
+    } else {
+        // 如果找不到重置按鈕，則添加到容器末尾
+        buttonContainer.appendChild(exportBtn);
+    }
+}
+
+// 生成並匯出格式化的微生物摘要
+function exportMicrobiologySummary() {
+    // 獲取微生物數據並生成格式化文本
+    let formattedText = formatMicrobiologyData();
+    
+    // 複製到剪貼簿
+    copyToClipboard(formattedText).then(() => {
+        showNotification('已複製微生物摘要到剪貼簿！');
+    }).catch(err => {
+        showNotification('複製失敗：' + err.message, true);
+        console.error('複製失敗:', err);
+    });
+}
+
+// 將微生物數據格式化為精簡的純文字格式
+function formatMicrobiologyData() {
+    let formattedText = '';
+    
+    // 從DOM中獲取微生物檢查結果區域的數據
+    const microbiologyDiv = document.getElementById('microbiologyResults');
+    if (!microbiologyDiv) {
+        return '找不到微生物數據';
+    }
+    
+    // 獲取所有微生物容器元素
+    const organismContainers = microbiologyDiv.querySelectorAll('.organism-container');
+    if (!organismContainers || organismContainers.length === 0) {
+        return '找不到微生物數據';
+    }
+    
+    // 處理每個微生物容器
+    organismContainers.forEach(container => {
+        // 獲取微生物基本信息
+        const titleElement = container.querySelector('strong');
+        if (!titleElement) return;
+        
+        // 提取日期、類型、檢體名稱和微生物名稱
+        const titleText = titleElement.textContent.trim();
+        
+        // 正則匹配: 日期 類型 檢體 微生物名稱
+        const titleMatch = titleText.match(/(\d{2}-\d{2})\s+([\w/]+)\s+([^\s]+)\s+(.+)/);
+        if (!titleMatch) return;
+        
+        // 提取標題信息
+        const date = titleMatch[1];
+        const type = titleMatch[2];
+        const specimen = titleMatch[3];
+        const organismName = titleMatch[4];
+        
+        // 提取生長程度
+        let growth = '';
+        const growthNode = Array.from(container.childNodes).find(node => 
+            node.nodeType === Node.TEXT_NODE && 
+            node.textContent.includes('"')
+        );
+        
+        if (growthNode) {
+            const growthMatch = growthNode.textContent.match(/"([^"]+)"/);
+            if (growthMatch) {
+                growth = growthMatch[1];
+            }
+        }
+        
+        // 提取收件編號 (通常在span中)
+        let sampleId = '';
+        const sampleIdElement = container.querySelector('span[style*="color: #666"]');
+        if (sampleIdElement) {
+            const sampleIdMatch = sampleIdElement.textContent.match(/\(([^)]+)\)/);
+            if (sampleIdMatch) {
+                sampleId = sampleIdMatch[1];
+            }
+        }
+        
+        // 開始構建這個微生物的文本
+        let entry = `◈ ${date} ${type} ${specimen} ${organismName}`;
+        
+        // 添加生長程度
+        if (growth) {
+            entry += ` "${growth}"`;
+        }
+        
+        // 添加收件編號
+        if (sampleId) {
+            entry += ` (${sampleId})`;
+        }
+        
+        formattedText += entry + '\n';
+        
+        // 獲取藥敏結果
+        const antibioticResults = container.querySelectorAll('.antibiotic-result');
+        if (antibioticResults && antibioticResults.length > 0) {
+            formattedText += '  + ';
+            
+            antibioticResults.forEach((result, index) => {
+                // 獲取藥物名稱
+                const drugNameElement = result.querySelector('.drug-name');
+                // 獲取敏感性結果
+                const sensitivityElement = result.querySelector('[class^="sensitivity-"]');
+                // 獲取MIC值
+                const micValueElement = result.querySelector('.mic-value');
+                
+                if (drugNameElement && sensitivityElement) {
+                    const drugName = drugNameElement.textContent.trim();
+                    const sensitivity = sensitivityElement.textContent.trim();
+                    
+                    let resultText = `${drugName}[${sensitivity}]`;
+                    
+                    // 添加MIC值 (如果有)
+                    if (micValueElement) {
+                        resultText += micValueElement.textContent.trim();
+                    }
+                    
+                    formattedText += resultText;
+                    
+                    // 添加空格 (除了最後一項)
+                    if (index < antibioticResults.length - 1) {
+                        formattedText += ' ';
+                    }
+                }
+            });
+            
+            formattedText += '\n';
+        }
+        
+        // 添加空行分隔各微生物結果
+        formattedText += '\n';
+    });
+    
+    return formattedText.trim();
+}
+
+// 複製文本到剪貼簿
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch (err) {
+        console.error('複製到剪貼簿失敗:', err);
+        throw err;
+    }
+}
+
+// 顯示通知
+function showNotification(message, isError = false) {
+    // 移除現有通知
+    const oldToast = document.querySelector('.toast-notification');
+    if (oldToast) {
+        oldToast.remove();
+    }
+    
+    // 創建新通知
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification' + (isError ? ' error' : '');
+    
+    // 使用圖標增強視覺效果
+    const icon = document.createElement('i');
+    if (isError) {
+        icon.className = 'fas fa-exclamation-circle';
+        icon.style.marginRight = '10px';
+    } else {
+        icon.className = 'fas fa-check-circle';
+        icon.style.marginRight = '10px';
+    }
+    
+    toast.appendChild(icon);
+    toast.appendChild(document.createTextNode(message));
+    
+    // 添加到頁面
+    document.body.appendChild(toast);
+    
+    // 觸發動畫
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
+    
+    // 2秒後消失
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+            toast.remove();
+        }, 300);
+    }, 2000);
+}
+
+// 在頁面載入後初始化
+document.addEventListener('DOMContentLoaded', function() {
+    // 添加匯出按鈕
+    addExportTextButton();
+    
+    // 監聽DOM變化以確保按鈕存在
+    const observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            if (mutation.type === 'childList') {
+                // 如果按鈕容器存在但按鈕不存在時，添加按鈕
+                const buttonContainer = document.querySelector('.action-buttons');
+                if (buttonContainer && !document.getElementById('exportTextBtn')) {
+                    addExportTextButton();
+                }
+            }
+        });
+    });
+    
+    observer.observe(document.body, { childList: true, subtree: true });
+});
+
+// 立即執行添加按鈕功能
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(addExportTextButton, 100);
 }
 
 </script>
